@@ -87,6 +87,32 @@ bool CityCoordinateStore::getCoordinates(string city, double& latitude, double& 
     return true;
 }
 
+std::string CityCoordinateStore::findNearestCity(double lat, double lon, double& outDistanceKm, 
+                                                 const std::vector<std::string>& excludeCities) const {
+    std::string nearest = "";
+    double minDistanceSqr = 1e9;
+    for (const auto& entry : coordinates_) {
+        bool isExcluded = false;
+        for (const std::string& exc : excludeCities) {
+            if (toLowerCoord(exc) == toLowerCoord(entry.first)) {
+                isExcluded = true;
+                break;
+            }
+        }
+        if (isExcluded) continue;
+
+        double dLat = entry.second.latitude - lat;
+        double dLon = entry.second.longitude - lon;
+        double distSqr = (dLat * dLat) + (dLon * dLon);
+        if (distSqr < minDistanceSqr) {
+            minDistanceSqr = distSqr;
+            nearest = entry.first;
+        }
+    }
+    outDistanceKm = sqrt(minDistanceSqr) * 111.0; // Rough conversion for degrees to km
+    return nearest;
+}
+
 void CityCoordinateStore::putCity(string city, double latitude, double longitude) {
     CityRecord record;
     record.city = city;

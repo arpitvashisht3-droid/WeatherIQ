@@ -32,6 +32,10 @@ public:
     // Return coordinates for a stored city name; false if missing
     bool getCoordinates(std::string city, double& latitude, double& longitude) const;
 
+    // Finds closest cached city, ignoring specific names to prevent duplicates
+    std::string findNearestCity(double lat, double lon, double& outDistanceKm, 
+                                const std::vector<std::string>& excludeCities) const;
+
     // Add or update a city in the in-memory cache (e.g. after geocoding)
     void putCity(std::string city, double latitude, double longitude);
 

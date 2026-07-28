@@ -13,8 +13,9 @@ using namespace std;
 
 extern bool g_debugMode;
 
-ApiRouteProvider::ApiRouteProvider(string endpointUrl) {
+ApiRouteProvider::ApiRouteProvider(string endpointUrl, const CityCoordinateStore* cityStore) {
     endpointUrl_ = endpointUrl;
+    cityStore_ = cityStore;
     queryReady_ = false;
     sourceLat_ = 0.0;
     sourceLon_ = 0.0;
@@ -227,6 +228,45 @@ bool ApiRouteProvider::parseSegmentDistances(const string& json,
     return !segmentMetersOut.empty();
 }
 
+bool ApiRouteProvider::parseGeoJsonCoordinates(const string& json, vector<pair<double, double>>& coordsOut) {
+    coordsOut.clear();
+    size_t geomPos = json.find("\"geometry\"");
+    if (geomPos == string::npos) return false;
+    
+    size_t coordsPos = json.find("\"coordinates\"", geomPos);
+    if (coordsPos == string::npos) return false;
+    
+    size_t arrayStart = json.find('[', coordsPos);
+    if (arrayStart == string::npos) return false;
+    
+    int depth = 0;
+    size_t i = arrayStart;
+    while (i < json.size()) {
+        char c = json[i];
+        if (c == '[') {
+            depth++;
+            if (depth == 2) {
+                size_t comma = json.find(',', i);
+                size_t close = json.find(']', i);
+                if (comma != string::npos && close != string::npos && comma < close) {
+                    string lonStr = json.substr(i + 1, comma - (i + 1));
+                    string latStr = json.substr(comma + 1, close - (comma + 1));
+                    char* endptr;
+                    double lon = strtod(lonStr.c_str(), &endptr);
+                    double lat = strtod(latStr.c_str(), &endptr);
+                    coordsOut.push_back({lat, lon});
+                    i = close;
+                }
+            }
+        } else if (c == ']') {
+            depth--;
+            if (depth == 0) break;
+        }
+        i++;
+    }
+    return !coordsOut.empty();
+}
+
 bool ApiRouteProvider::fetchDirectionsJson(string& jsonOut) const {
     jsonOut.clear();
 
@@ -244,7 +284,20 @@ bool ApiRouteProvider::fetchDirectionsJson(string& jsonOut) const {
          << sourceLon_ << "," << sourceLat_ << "],["
          << destLon_ << "," << destLat_ << "]]}";
 
-    jsonOut = httpPostJson(endpointUrl_, body.str(), apiKey);
+    const char* envFlag = getenv("ENABLE_WAYPOINTS");
+    bool enableWaypoints = Config::ENABLE_WAYPOINTS;
+    if (envFlag != nullptr) {
+        enableWaypoints = (string(envFlag) == "1" || string(envFlag) == "true");
+    }
+
+    string url = endpointUrl_;
+    if (enableWaypoints) {
+        if (url.find("/geojson") == string::npos) {
+            url += "/geojson";
+        }
+    }
+
+    jsonOut = httpPostJson(url, body.str(), apiKey);
     return !jsonOut.empty();
 }
 

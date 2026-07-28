@@ -21,6 +21,9 @@ namespace Config {
     // OpenWeatherMap current weather API (lat/lon lookup)
     const char* const OWM_WEATHER_URL =
         "https://api.openweathermap.org/data/2.5/weather";
+
+    // Feature flag to toggle rich intermediate waypoint generation
+    const bool ENABLE_WAYPOINTS = false;
 }
 
 #endif

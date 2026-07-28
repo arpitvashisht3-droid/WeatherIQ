@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include "RouteProvider.h"
+#include "CityCoordinateStore.h"
 
 /*
  * ApiRouteProvider: fetches ONE driving route from OpenRouteService Directions API.
@@ -18,6 +19,7 @@
 class ApiRouteProvider : public RouteProvider {
 private:
     std::string endpointUrl_;
+    const CityCoordinateStore* cityStore_;
 
     // Query set by main() after LocationResolver runs
     bool queryReady_;
@@ -40,12 +42,16 @@ private:
     static bool parseSegmentDistances(const std::string& json,
                                       std::vector<double>& segmentMetersOut);
 
+    // Parse coordinate LineStrings from GeoJSON
+    static bool parseGeoJsonCoordinates(const std::string& json, 
+                                        std::vector<std::pair<double, double>>& coordsOut);
+
     bool fetchDirectionsJson(std::string& jsonOut) const;
     bool buildRecordsFromSegments(const std::vector<double>& segmentMeters,
                                   std::vector<RouteRecord>& outRoutes) const;
 
 public:
-    explicit ApiRouteProvider(std::string endpointUrl);
+    ApiRouteProvider(std::string endpointUrl, const CityCoordinateStore* cityStore);
 
     /*
      * Set the trip to fetch before calling fetchRoutes().
