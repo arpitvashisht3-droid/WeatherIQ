@@ -53,13 +53,17 @@ class RouteService:
                 "cpp/Graph.cpp cpp/AStar.cpp cpp/Weather.cpp "
                 "cpp/CsvRouteProvider.cpp cpp/ApiRouteProvider.cpp "
                 "cpp/GraphBuilder.cpp cpp/CsvCityProvider.cpp "
-                "cpp/CityCoordinateStore.cpp cpp/main.cpp"
+                "cpp/CityCoordinateStore.cpp cpp/LocationResolver.cpp "
+                "cpp/main.cpp"
             )
 
         env = os.environ.copy()
         if self.ors_api_key:
             env["OPENROUTESERVICE_API_KEY"] = self.ors_api_key
             env.setdefault("ORS_API_KEY", self.ors_api_key)
+        owm_key = os.getenv("OPENWEATHERMAP_API_KEY", "").strip()
+        if owm_key:
+            env["OPENWEATHERMAP_API_KEY"] = owm_key
 
         stdin_payload = f"{source}\n{destination}\n"
 
@@ -104,7 +108,7 @@ class RouteService:
     def _parse_planner_output(
         self, stdout: str, source: str, destination: str
     ) -> dict[str, Any]:
-        """Parse printPath / coordinate lines from weatheriq stdout."""
+        """Parse printPath / coordinate / recommended route lines from weatheriq stdout."""
         route_taken = None
         cities: list[str] = []
         edges: list[dict[str, Any]] = []
@@ -114,6 +118,19 @@ class RouteService:
         start_coordinates: dict[str, float] | None = None
         goal_coordinates: dict[str, float] | None = None
 
+        # User-friendly fields (new format)
+        expected_weather: str | None = None
+        travel_risk: str | None = None
+        recommendation: str | None = None
+
+        # Patterns for the new user-friendly format
+        route_friendly_re = re.compile(r"^\s*Route\s*:\s*(.+)\s*$")
+        distance_friendly_re = re.compile(r"^\s*Distance\s*:\s*(\d+)\s*km\s*$")
+        weather_friendly_re = re.compile(r"^\s*Expected Weather\s*:\s*(.+)\s*$")
+        risk_friendly_re = re.compile(r"^\s*Travel Risk\s*:\s*(.+)\s*$")
+        rec_friendly_re = re.compile(r"^\s*Recommendation\s*:\s*(.+)\s*$")
+
+        # Patterns for the old format (fallback/compatibility)
         route_re = re.compile(r"^Route taken:\s*(.+)\s*$")
         edge_re = re.compile(
             r"^\s*(.+?)\s*->\s*(.+?):\s*(\d+)\s*km,\s*"
@@ -130,6 +147,34 @@ class RouteService:
         for raw_line in stdout.splitlines():
             line = raw_line.rstrip()
 
+            # 1. New user-friendly format matching
+            m = route_friendly_re.match(line)
+            if m:
+                route_taken = m.group(1).strip()
+                cities = [c.strip() for c in route_taken.split("->")]
+                continue
+
+            m = distance_friendly_re.match(line)
+            if m:
+                distance_km = int(m.group(1))
+                continue
+
+            m = weather_friendly_re.match(line)
+            if m:
+                expected_weather = m.group(1).strip()
+                continue
+
+            m = risk_friendly_re.match(line)
+            if m:
+                travel_risk = m.group(1).strip()
+                continue
+
+            m = rec_friendly_re.match(line)
+            if m:
+                recommendation = m.group(1).strip()
+                continue
+
+            # 2. Old/debug format matching
             m = route_re.match(line)
             if m:
                 route_taken = m.group(1).strip()
@@ -177,13 +222,28 @@ class RouteService:
                     goal_coordinates = coords
 
         if not route_taken or not cities:
-            if "No path found" in stdout or "No route to display" in stdout:
+            if "No path found" in stdout or "No route to display" in stdout or "No route could be found" in stdout:
                 raise RoutePlannerError(
                     f"No path found from {source} to {destination}"
                 )
             raise RoutePlannerError(
                 "Could not parse route from C++ planner output"
             )
+
+        # If we got a recommended route and weather, but no edges from stdout,
+        # reconstruct a single edge representation to support weather mapping cleanly.
+        if not edges and cities and expected_weather:
+            for i in range(len(cities) - 1):
+                edges.append(
+                    {
+                        "from": cities[i],
+                        "to": cities[i+1],
+                        "distance_km": distance_km if len(cities) == 2 else None,
+                        "weather": expected_weather,
+                        "weather_penalty": 0,
+                        "edge_cost": None,
+                    }
+                )
 
         return {
             "source": source,
@@ -197,4 +257,7 @@ class RouteService:
             "start_coordinates": start_coordinates,
             "goal_coordinates": goal_coordinates,
             "engine": "weatheriq-cpp",
+            "expected_weather": expected_weather,
+            "travel_risk": travel_risk,
+            "recommendation": recommendation,
         }

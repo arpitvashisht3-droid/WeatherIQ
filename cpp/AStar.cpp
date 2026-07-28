@@ -9,6 +9,8 @@
 
 using namespace std;
 
+extern bool g_debugMode;
+
 /*
  * AStarNode: one entry in the priority queue.
  *
@@ -115,7 +117,9 @@ vector<string> aStarSearch(Graph& graph, string start, string goal) {
     startNode.f = 0 + heuristic(start, goal);  // f = g + h
     openSet.push(startNode);
 
-    cout << "\nRunning A* from " << start << " to " << goal << "..." << endl;
+    if (g_debugMode) {
+        cout << "\nRunning A* from " << start << " to " << goal << "..." << endl;
+    }
 
     // Main A* loop: keep exploring until the queue is empty
     while (!openSet.empty()) {
@@ -123,12 +127,14 @@ vector<string> aStarSearch(Graph& graph, string start, string goal) {
         AStarNode current = openSet.top();
         openSet.pop();
 
-        cout << "  Exploring: " << current.city
-             << " (g=" << current.g << ", f=" << current.f << ")" << endl;
+        if (g_debugMode) {
+            cout << "  Exploring: " << current.city
+                 << " (g=" << current.g << ", f=" << current.f << ")" << endl;
+        }
 
         // If we reached the goal, rebuild and return the path
         if (current.city == goal) {
-            cout << "  Reached goal!" << endl;
+            if (g_debugMode) cout << "  Reached goal!" << endl;
             return reconstructPath(cameFrom, current.city);
         }
 
@@ -170,9 +176,11 @@ vector<string> aStarSearch(Graph& graph, string start, string goal) {
                 nextNode.f = tentativeG + heuristic(neighbor, goal);
                 openSet.push(nextNode);
 
-                cout << "    Update path to " << neighbor
-                     << " via " << current.city
-                     << " (g=" << tentativeG << ", f=" << nextNode.f << ")" << endl;
+                if (g_debugMode) {
+                    cout << "    Update path to " << neighbor
+                         << " via " << current.city
+                         << " (g=" << tentativeG << ", f=" << nextNode.f << ")" << endl;
+                }
             }
         }
     }

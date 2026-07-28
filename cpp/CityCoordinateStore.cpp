@@ -6,6 +6,8 @@
 
 using namespace std;
 
+extern bool g_debugMode;
+
 static string trimCoordText(string text) {
     int start = 0;
     while (start < (int)text.size() && text[start] == ' ') {
@@ -49,8 +51,10 @@ bool CityCoordinateStore::loadFromProvider(CityProvider& provider) {
         coordinates_[cities[i].city] = cities[i];
     }
 
-    cout << "CityCoordinateStore: loaded " << coordinates_.size()
-         << " city coordinate(s)." << endl;
+    if (g_debugMode) {
+        cout << "CityCoordinateStore: loaded " << coordinates_.size()
+             << " city coordinate(s)." << endl;
+    }
     return true;
 }
 
@@ -81,6 +85,14 @@ bool CityCoordinateStore::getCoordinates(string city, double& latitude, double& 
     latitude = found->second.latitude;
     longitude = found->second.longitude;
     return true;
+}
+
+void CityCoordinateStore::putCity(string city, double latitude, double longitude) {
+    CityRecord record;
+    record.city = city;
+    record.latitude = latitude;
+    record.longitude = longitude;
+    coordinates_[city] = record;
 }
 
 void CityCoordinateStore::displayCities() const {

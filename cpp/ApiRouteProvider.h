@@ -3,82 +3,60 @@
 
 #include <string>
 #include <vector>
-#include <utility>
-#include <unordered_map>
 #include "RouteProvider.h"
 
 /*
- * ApiRouteProvider: loads roads by calling the OpenRouteService Directions API.
+ * ApiRouteProvider: fetches ONE driving route from OpenRouteService Directions API.
  *
- * For each city pair listed in routes.csv, looks up coordinates in cities.csv,
- * requests driving distance from ORS, and builds a RouteRecord:
- *   fromCity, toCity, distanceKm (from ORS), weather (from routes.csv)
+ * Call setQuery() with resolved source/destination coordinates, then fetchRoutes().
+ * Parses ORS segments into a chain of RouteRecord objects for GraphBuilder.
  *
- * API key must come from the environment (never hardcode it):
- *   OPENROUTESERVICE_API_KEY  (preferred)
- *   or ORS_API_KEY
+ * Does NOT use routes.csv. No hardcoded roads.
+ *
+ * API key: OPENROUTESERVICE_API_KEY or ORS_API_KEY (environment only).
  */
 class ApiRouteProvider : public RouteProvider {
 private:
     std::string endpointUrl_;
-    std::string citiesCsvPath_;
-    std::string routesCsvPath_;
 
-    // Read API key from environment variables
+    // Query set by main() after LocationResolver runs
+    bool queryReady_;
+    std::string sourceName_;
+    std::string destName_;
+    double sourceLat_;
+    double sourceLon_;
+    double destLat_;
+    double destLon_;
+
     static std::string readApiKeyFromEnv();
-
-    // Small string helpers
     static std::string trim(std::string text);
-    static std::string toLowerCopy(std::string text);
+    static int metersToKm(double meters);
 
-    // Load city -> (latitude, longitude) from cities.csv
-    bool loadCityCoordinates(
-        std::unordered_map<std::string, std::pair<double, double> >& outCoords) const;
+    static std::string httpPostJson(const std::string& url,
+                                    const std::string& jsonBody,
+                                    const std::string& apiKey);
 
-    // One planned road: names + weather (distance comes from ORS)
-    struct RoutePair {
-        std::string fromCity;
-        std::string toCity;
-        std::string weather;
-    };
+    // Parse ORS directions JSON into segment distances (meters)
+    static bool parseSegmentDistances(const std::string& json,
+                                      std::vector<double>& segmentMetersOut);
 
-    // Load city pairs and weather labels from routes.csv
-    bool loadRoutePairs(std::vector<RoutePair>& outPairs) const;
-
-    // Case-insensitive lookup of coordinates for a city name
-    static bool findCoordinates(
-        const std::unordered_map<std::string, std::pair<double, double> >& coords,
-        const std::string& city,
-        double& latitude,
-        double& longitude);
-
-    // POST one directions request; distanceKmOut is rounded kilometers
-    bool fetchDistanceKm(
-        double fromLon,
-        double fromLat,
-        double toLon,
-        double toLat,
-        int& distanceKmOut) const;
-
-    // Parse meters from ORS JSON: routes[0].summary.distance
-    static bool parseDistanceMeters(const std::string& json, double& metersOut);
-
-    // HTTP POST via curl; returns response body (empty on failure)
-    static std::string httpPostJson(
-        const std::string& url,
-        const std::string& jsonBody,
-        const std::string& apiKey);
+    bool fetchDirectionsJson(std::string& jsonOut) const;
+    bool buildRecordsFromSegments(const std::vector<double>& segmentMeters,
+                                  std::vector<RouteRecord>& outRoutes) const;
 
 public:
-    /*
-     * endpointUrl: ORS directions URL, e.g.
-     *   https://api.openrouteservice.org/v2/directions/driving-car
-     * Optional CSV paths default to Config project paths when left empty.
-     */
     explicit ApiRouteProvider(std::string endpointUrl);
-    ApiRouteProvider(std::string endpointUrl,
-                     std::string citiesCsvPath,
-                     std::string routesCsvPath);
+
+    /*
+     * Set the trip to fetch before calling fetchRoutes().
+     * Coordinates come from LocationResolver (cache or geocoding).
+     */
+    void setQuery(std::string sourceName,
+                  double sourceLat,
+                  double sourceLon,
+                  std::string destName,
+                  double destLat,
+                  double destLon);
 
     std::string sourceName() const;
     bool fetchRoutes(std::vector<RouteRecord>& outRoutes);

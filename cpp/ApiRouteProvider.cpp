@@ -1,5 +1,6 @@
 #include "ApiRouteProvider.h"
 #include "Config.h"
+#include "Weather.h"
 
 #include <iostream>
 #include <fstream>
@@ -7,26 +8,52 @@
 #include <cstdlib>
 #include <cstdio>
 #include <cmath>
-#include <unistd.h>
 
 using namespace std;
 
+extern bool g_debugMode;
+
 ApiRouteProvider::ApiRouteProvider(string endpointUrl) {
     endpointUrl_ = endpointUrl;
-    citiesCsvPath_ = Config::DEFAULT_CITIES_CSV;
-    routesCsvPath_ = Config::DEFAULT_ROUTES_CSV;
+    queryReady_ = false;
+    sourceLat_ = 0.0;
+    sourceLon_ = 0.0;
+    destLat_ = 0.0;
+    destLon_ = 0.0;
 }
 
-ApiRouteProvider::ApiRouteProvider(string endpointUrl,
-                                   string citiesCsvPath,
-                                   string routesCsvPath) {
-    endpointUrl_ = endpointUrl;
-    citiesCsvPath_ = citiesCsvPath;
-    routesCsvPath_ = routesCsvPath;
+void ApiRouteProvider::setQuery(string sourceName,
+                              double sourceLat,
+                              double sourceLon,
+                              string destName,
+                              double destLat,
+                              double destLon) {
+    sourceName_ = sourceName;
+    sourceLat_ = sourceLat;
+    sourceLon_ = sourceLon;
+    destName_ = destName;
+    destLat_ = destLat;
+    destLon_ = destLon;
+    queryReady_ = true;
 }
 
 string ApiRouteProvider::sourceName() const {
+    if (queryReady_) {
+        return "OpenRouteService (" + sourceName_ + " -> " + destName_ + ")";
+    }
     return "OpenRouteService (" + endpointUrl_ + ")";
+}
+
+string ApiRouteProvider::readApiKeyFromEnv() {
+    const char* primary = getenv("OPENROUTESERVICE_API_KEY");
+    if (primary != NULL && string(primary).size() > 0) {
+        return string(primary);
+    }
+    const char* fallback = getenv("ORS_API_KEY");
+    if (fallback != NULL && string(fallback).size() > 0) {
+        return string(fallback);
+    }
+    return "";
 }
 
 string ApiRouteProvider::trim(string text) {
@@ -34,235 +61,28 @@ string ApiRouteProvider::trim(string text) {
     while (start < (int)text.size() && text[start] == ' ') {
         start++;
     }
-
     int end = (int)text.size() - 1;
     while (end >= start && text[end] == ' ') {
         end--;
     }
-
     if (end < start) {
         return "";
     }
     return text.substr(start, end - start + 1);
 }
 
-string ApiRouteProvider::toLowerCopy(string text) {
-    for (int i = 0; i < (int)text.size(); i++) {
-        char c = text[i];
-        if (c >= 'A' && c <= 'Z') {
-            text[i] = (char)(c - 'A' + 'a');
-        }
+int ApiRouteProvider::metersToKm(double meters) {
+    int km = (int)floor((meters / 1000.0) + 0.5);
+    if (km < 1 && meters > 0.0) {
+        km = 1;
     }
-    return text;
-}
-
-/*
- * Prefer OPENROUTESERVICE_API_KEY, then ORS_API_KEY.
- * Never embed the key in source code.
- */
-string ApiRouteProvider::readApiKeyFromEnv() {
-    const char* primary = getenv("OPENROUTESERVICE_API_KEY");
-    if (primary != NULL && string(primary).size() > 0) {
-        return string(primary);
-    }
-
-    const char* fallback = getenv("ORS_API_KEY");
-    if (fallback != NULL && string(fallback).size() > 0) {
-        return string(fallback);
-    }
-
-    return "";
-}
-
-bool ApiRouteProvider::loadCityCoordinates(
-    unordered_map<string, pair<double, double> >& outCoords) const {
-    outCoords.clear();
-
-    ifstream input(citiesCsvPath_);
-    if (!input.is_open()) {
-        cout << "ApiRouteProvider: could not open cities file: "
-             << citiesCsvPath_ << endl;
-        return false;
-    }
-
-    string line;
-    while (getline(input, line)) {
-        line = trim(line);
-        if (line.empty() || line[0] == '#') {
-            continue;
-        }
-
-        stringstream ss(line);
-        string city;
-        string latText;
-        string lonText;
-
-        if (!getline(ss, city, ',')) {
-            continue;
-        }
-        if (!getline(ss, latText, ',')) {
-            continue;
-        }
-        if (!getline(ss, lonText)) {
-            continue;
-        }
-
-        city = trim(city);
-        latText = trim(latText);
-        lonText = trim(lonText);
-
-        if (city == "city" && latText == "latitude") {
-            continue;
-        }
-
-        double latitude = 0.0;
-        double longitude = 0.0;
-        stringstream latStream(latText);
-        stringstream lonStream(lonText);
-        if (!(latStream >> latitude) || !(lonStream >> longitude)) {
-            cout << "ApiRouteProvider: bad coordinates in line: " << line << endl;
-            continue;
-        }
-
-        outCoords[city] = make_pair(latitude, longitude);
-    }
-
-    input.close();
-    return !outCoords.empty();
-}
-
-bool ApiRouteProvider::loadRoutePairs(vector<RoutePair>& outPairs) const {
-    outPairs.clear();
-
-    ifstream input(routesCsvPath_);
-    if (!input.is_open()) {
-        cout << "ApiRouteProvider: could not open routes file: "
-             << routesCsvPath_ << endl;
-        return false;
-    }
-
-    string line;
-    while (getline(input, line)) {
-        line = trim(line);
-        if (line.empty() || line[0] == '#') {
-            continue;
-        }
-
-        stringstream ss(line);
-        string fromCity;
-        string toCity;
-        string distanceText;
-        string weather;
-
-        if (!getline(ss, fromCity, ',')) {
-            continue;
-        }
-        if (!getline(ss, toCity, ',')) {
-            continue;
-        }
-        if (!getline(ss, distanceText, ',')) {
-            continue;
-        }
-        if (!getline(ss, weather)) {
-            continue;
-        }
-
-        fromCity = trim(fromCity);
-        toCity = trim(toCity);
-        weather = trim(weather);
-
-        if (fromCity == "city" && toCity == "destination") {
-            continue;
-        }
-
-        // CSV distance is ignored; ORS supplies real distance.
-        // Weather is kept from the CSV until a weather API is added.
-        RoutePair pair;
-        pair.fromCity = fromCity;
-        pair.toCity = toCity;
-        pair.weather = weather;
-        outPairs.push_back(pair);
-    }
-
-    input.close();
-    return !outPairs.empty();
-}
-
-bool ApiRouteProvider::findCoordinates(
-    const unordered_map<string, pair<double, double> >& coords,
-    const string& city,
-    double& latitude,
-    double& longitude) {
-    string needle = toLowerCopy(city);
-
-    for (auto entry : coords) {
-        if (toLowerCopy(entry.first) == needle) {
-            latitude = entry.second.first;
-            longitude = entry.second.second;
-            return true;
-        }
-    }
-    return false;
-}
-
-/*
- * Extract routes[0].summary.distance (meters) from ORS JSON.
- * Keeps parsing simple and beginner-friendly (no JSON library).
- */
-bool ApiRouteProvider::parseDistanceMeters(const string& json, double& metersOut) {
-    if (json.find("\"error\"") != string::npos && json.find("\"routes\"") == string::npos) {
-        return false;
-    }
-
-    size_t summaryPos = json.find("\"summary\"");
-    if (summaryPos == string::npos) {
-        return false;
-    }
-
-    size_t distancePos = json.find("\"distance\"", summaryPos);
-    if (distancePos == string::npos) {
-        return false;
-    }
-
-    size_t colonPos = json.find(':', distancePos);
-    if (colonPos == string::npos) {
-        return false;
-    }
-
-    size_t numberStart = colonPos + 1;
-    while (numberStart < json.size() &&
-           (json[numberStart] == ' ' || json[numberStart] == '\t')) {
-        numberStart++;
-    }
-
-    size_t numberEnd = numberStart;
-    while (numberEnd < json.size()) {
-        char c = json[numberEnd];
-        if ((c >= '0' && c <= '9') || c == '.' || c == '-' || c == '+' || c == 'e' || c == 'E') {
-            numberEnd++;
-        } else {
-            break;
-        }
-    }
-
-    if (numberEnd <= numberStart) {
-        return false;
-    }
-
-    string numberText = json.substr(numberStart, numberEnd - numberStart);
-    stringstream numberStream(numberText);
-    if (!(numberStream >> metersOut)) {
-        return false;
-    }
-
-    return metersOut >= 0.0;
+    return km;
 }
 
 string ApiRouteProvider::httpPostJson(const string& url,
                                       const string& jsonBody,
                                       const string& apiKey) {
-    // Write body to a temp file so shell quoting stays simple and safe
-    string bodyPath = "/tmp/weatheriq_ors_body.json";
+    string bodyPath = "/tmp/weatheriq_ors_directions_body.json";
     ofstream bodyFile(bodyPath.c_str());
     if (!bodyFile.is_open()) {
         cout << "ApiRouteProvider: could not write temp request body file." << endl;
@@ -271,13 +91,12 @@ string ApiRouteProvider::httpPostJson(const string& url,
     bodyFile << jsonBody;
     bodyFile.close();
 
-    // -s silent, -S show errors, --fail fail on HTTP error codes
     string command =
         "curl -s -S --fail -X POST \"" + url + "\" "
         "-H \"Authorization: " + apiKey + "\" "
         "-H \"Content-Type: application/json; charset=utf-8\" "
         "-H \"Accept: application/json\" "
-        "-d @\"" + bodyPath + "\" 2>/tmp/weatheriq_ors_curl_err.txt";
+        "-d @\"" + bodyPath + "\" 2>/tmp/weatheriq_ors_directions_err.txt";
 
     FILE* pipe = popen(command.c_str(), "r");
     if (pipe == NULL) {
@@ -293,146 +112,255 @@ string ApiRouteProvider::httpPostJson(const string& url,
 
     int status = pclose(pipe);
     if (status != 0) {
-        ifstream errFile("/tmp/weatheriq_ors_curl_err.txt");
+        ifstream errFile("/tmp/weatheriq_ors_directions_err.txt");
         string errLine;
-        cout << "ApiRouteProvider: curl request failed.";
+        cout << "ApiRouteProvider: directions request failed.";
         if (errFile.is_open() && getline(errFile, errLine)) {
             cout << " " << errLine;
         }
         cout << endl;
-        if (!response.empty()) {
-            cout << "ApiRouteProvider: response snippet: "
-                 << response.substr(0, 200) << endl;
-        }
         return "";
     }
-
     return response;
 }
 
-bool ApiRouteProvider::fetchDistanceKm(double fromLon,
-                                       double fromLat,
-                                       double toLon,
-                                       double toLat,
-                                       int& distanceKmOut) const {
-    string apiKey = readApiKeyFromEnv();
-    if (apiKey.empty()) {
-        cout << "ApiRouteProvider: missing API key. Set OPENROUTESERVICE_API_KEY "
-             << "(or ORS_API_KEY) in your environment." << endl;
+/*
+ * Parse each segment's distance from ORS directions JSON.
+ * Collects "distance" fields only at segment-object depth (ignores step distances).
+ */
+bool ApiRouteProvider::parseSegmentDistances(const string& json,
+                                           vector<double>& segmentMetersOut) {
+    segmentMetersOut.clear();
+
+    if (json.find("\"error\"") != string::npos && json.find("\"routes\"") == string::npos) {
         return false;
     }
 
-    // ORS expects [longitude, latitude] pairs
+    size_t segmentsPos = json.find("\"segments\"");
+    if (segmentsPos == string::npos) {
+        return false;
+    }
+
+    size_t arrayStart = json.find('[', segmentsPos);
+    if (arrayStart == string::npos) {
+        return false;
+    }
+
+    int depth = 0;
+    for (size_t i = arrayStart; i < json.size(); i++) {
+        char c = json[i];
+
+        if (c == '[' || c == '{') {
+            depth++;
+        } else if (c == ']' || c == '}') {
+            if (c == ']' && depth == 1) {
+                break;  // end of segments array
+            }
+            depth--;
+        }
+
+        // depth 2 = inside a segment object { ... } (array depth 1 + object depth 1)
+        if (depth == 2 && json.compare(i, 10, "\"distance\"") == 0) {
+            size_t colon = json.find(':', i + 10);
+            if (colon == string::npos) {
+                continue;
+            }
+            size_t numStart = colon + 1;
+            while (numStart < json.size() &&
+                   (json[numStart] == ' ' || json[numStart] == '\t')) {
+                numStart++;
+            }
+            size_t numEnd = numStart;
+            while (numEnd < json.size()) {
+                char ch = json[numEnd];
+                if ((ch >= '0' && ch <= '9') || ch == '.' || ch == '-' ||
+                    ch == '+' || ch == 'e' || ch == 'E') {
+                    numEnd++;
+                } else {
+                    break;
+                }
+            }
+            if (numEnd > numStart) {
+                stringstream ss(json.substr(numStart, numEnd - numStart));
+                double meters = 0.0;
+                if (ss >> meters) {
+                    segmentMetersOut.push_back(meters);
+                }
+            }
+            i = numEnd;
+        }
+    }
+
+    // Fallback: single route with no segment list — use summary distance
+    if (segmentMetersOut.empty()) {
+        size_t summaryPos = json.find("\"summary\"");
+        if (summaryPos != string::npos) {
+            size_t distancePos = json.find("\"distance\"", summaryPos);
+            if (distancePos != string::npos) {
+                size_t colon = json.find(':', distancePos);
+                size_t numStart = colon + 1;
+                while (numStart < json.size() &&
+                       (json[numStart] == ' ' || json[numStart] == '\t')) {
+                    numStart++;
+                }
+                size_t numEnd = numStart;
+                while (numEnd < json.size()) {
+                    char ch = json[numEnd];
+                    if ((ch >= '0' && ch <= '9') || ch == '.' || ch == '-' ||
+                        ch == '+' || ch == 'e' || ch == 'E') {
+                        numEnd++;
+                    } else {
+                        break;
+                    }
+                }
+                if (numEnd > numStart) {
+                    stringstream ss(json.substr(numStart, numEnd - numStart));
+                    double meters = 0.0;
+                    if (ss >> meters) {
+                        segmentMetersOut.push_back(meters);
+                    }
+                }
+            }
+        }
+    }
+
+    return !segmentMetersOut.empty();
+}
+
+bool ApiRouteProvider::fetchDirectionsJson(string& jsonOut) const {
+    jsonOut.clear();
+
+    string apiKey = readApiKeyFromEnv();
+    if (apiKey.empty()) {
+        cout << "ApiRouteProvider: missing API key. Set OPENROUTESERVICE_API_KEY "
+             << "or ORS_API_KEY." << endl;
+        return false;
+    }
+
     ostringstream body;
     body.setf(ios::fixed);
     body.precision(6);
     body << "{\"coordinates\":[["
-         << fromLon << "," << fromLat << "],["
-         << toLon << "," << toLat << "]]}";
+         << sourceLon_ << "," << sourceLat_ << "],["
+         << destLon_ << "," << destLat_ << "]]}";
 
-    string response = httpPostJson(endpointUrl_, body.str(), apiKey);
-    if (response.empty()) {
-        return false;
-    }
-
-    double meters = 0.0;
-    if (!parseDistanceMeters(response, meters)) {
-        cout << "ApiRouteProvider: could not parse distance from ORS response." << endl;
-        cout << "ApiRouteProvider: response snippet: "
-             << response.substr(0, 300) << endl;
-        return false;
-    }
-
-    // Convert meters -> whole kilometers for RouteRecord.distanceKm
-    distanceKmOut = (int)floor((meters / 1000.0) + 0.5);
-    if (distanceKmOut < 1 && meters > 0.0) {
-        distanceKmOut = 1;
-    }
-    return true;
+    jsonOut = httpPostJson(endpointUrl_, body.str(), apiKey);
+    return !jsonOut.empty();
 }
 
 /*
- * fetchRoutes:
- * 1) Read city coordinates and route pairs from CSV (pair list / weather only)
- * 2) Call OpenRouteService for each pair's driving distance
- * 3) Emit RouteRecord{from, to, orsDistanceKm, weather}
+ * Turn ORS segment distances into a chain of RouteRecords:
+ *   Source -> WP1 -> WP2 -> ... -> Destination
+ *
+ * For each segment we sample the route midpoint and fetch live weather
+ * from OpenWeatherMap, mapped to WeatherIQ labels for A* penalties.
  */
+bool ApiRouteProvider::buildRecordsFromSegments(const vector<double>& segmentMeters,
+                                                vector<RouteRecord>& outRoutes) const {
+    outRoutes.clear();
+
+    if (segmentMeters.empty()) {
+        return false;
+    }
+
+    // Total route length for coordinate interpolation along the path
+    double totalMeters = 0.0;
+    for (int i = 0; i < (int)segmentMeters.size(); i++) {
+        totalMeters += segmentMeters[i];
+    }
+
+    // Build node coordinates: source, interpolated waypoints, destination
+    vector<string> nodes;
+    vector<double> nodeLats;
+    vector<double> nodeLons;
+
+    nodes.push_back(sourceName_);
+    nodeLats.push_back(sourceLat_);
+    nodeLons.push_back(sourceLon_);
+
+    double cumulative = 0.0;
+    for (int i = 0; i < (int)segmentMeters.size() - 1; i++) {
+        cumulative += segmentMeters[i];
+        double ratio = 0.0;
+        if (totalMeters > 0.0) {
+            ratio = cumulative / totalMeters;
+        }
+
+        ostringstream wp;
+        wp << "WP" << (i + 1);
+        nodes.push_back(wp.str());
+
+        double lat = sourceLat_ + ratio * (destLat_ - sourceLat_);
+        double lon = sourceLon_ + ratio * (destLon_ - sourceLon_);
+        nodeLats.push_back(lat);
+        nodeLons.push_back(lon);
+    }
+
+    nodes.push_back(destName_);
+    nodeLats.push_back(destLat_);
+    nodeLons.push_back(destLon_);
+
+    if (g_debugMode) {
+        cout << "ApiRouteProvider: fetching live weather for "
+             << segmentMeters.size() << " segment(s)..." << endl;
+    }
+
+    for (int i = 0; i < (int)segmentMeters.size(); i++) {
+        double midLat = (nodeLats[i] + nodeLats[i + 1]) / 2.0;
+        double midLon = (nodeLons[i] + nodeLons[i + 1]) / 2.0;
+
+        string condition = Weather::fetchConditionAt(midLat, midLon);
+
+        RouteRecord record;
+        record.fromCity = nodes[i];
+        record.toCity = nodes[i + 1];
+        record.distanceKm = metersToKm(segmentMeters[i]);
+        record.weather = condition;
+        outRoutes.push_back(record);
+    }
+
+    return true;
+}
+
 bool ApiRouteProvider::fetchRoutes(vector<RouteRecord>& outRoutes) {
     outRoutes.clear();
 
-    string apiKey = readApiKeyFromEnv();
-    if (apiKey.empty()) {
-        cout << "ApiRouteProvider: missing API key." << endl;
-        cout << "Export one of these before running:" << endl;
-        cout << "  export OPENROUTESERVICE_API_KEY=\"your_key_here\"" << endl;
-        cout << "  export ORS_API_KEY=\"your_key_here\"" << endl;
+    if (!queryReady_) {
+        cout << "ApiRouteProvider: call setQuery() before fetchRoutes()." << endl;
         return false;
     }
 
-    unordered_map<string, pair<double, double> > coords;
-    if (!loadCityCoordinates(coords)) {
-        cout << "ApiRouteProvider: failed to load city coordinates." << endl;
+    if (g_debugMode) {
+        cout << "ApiRouteProvider: fetching driving route "
+             << sourceName_ << " -> " << destName_ << " from OpenRouteService..."
+             << endl;
+    }
+
+    string json;
+    if (!fetchDirectionsJson(json)) {
         return false;
     }
 
-    vector<RoutePair> pairs;
-    if (!loadRoutePairs(pairs)) {
-        cout << "ApiRouteProvider: failed to load route pairs." << endl;
+    vector<double> segmentMeters;
+    if (!parseSegmentDistances(json, segmentMeters)) {
+        cout << "ApiRouteProvider: could not parse segments from ORS response." << endl;
+        cout << "ApiRouteProvider: snippet: " << json.substr(0, 300) << endl;
         return false;
     }
 
-    cout << "ApiRouteProvider: fetching " << pairs.size()
-         << " route distance(s) from OpenRouteService..." << endl;
-
-    for (int i = 0; i < (int)pairs.size(); i++) {
-        RoutePair pair = pairs[i];
-
-        double fromLat = 0.0;
-        double fromLon = 0.0;
-        double toLat = 0.0;
-        double toLon = 0.0;
-
-        if (!findCoordinates(coords, pair.fromCity, fromLat, fromLon)) {
-            cout << "ApiRouteProvider: no coordinates for " << pair.fromCity << endl;
-            continue;
-        }
-        if (!findCoordinates(coords, pair.toCity, toLat, toLon)) {
-            cout << "ApiRouteProvider: no coordinates for " << pair.toCity << endl;
-            continue;
-        }
-
-        int distanceKm = 0;
-        // ORS uses lon,lat order
-        bool ok = fetchDistanceKm(fromLon, fromLat, toLon, toLat, distanceKm);
-        if (!ok) {
-            cout << "ApiRouteProvider: ORS request failed for "
-                 << pair.fromCity << " -> " << pair.toCity << endl;
-            continue;
-        }
-
-        RouteRecord record;
-        record.fromCity = pair.fromCity;
-        record.toCity = pair.toCity;
-        record.distanceKm = distanceKm;
-        record.weather = pair.weather;
-        outRoutes.push_back(record);
-
-        cout << "  ORS: " << record.fromCity << " -> " << record.toCity
-             << " = " << record.distanceKm << " km"
-             << " [" << record.weather << "]" << endl;
-
-        // Be gentle with the free-tier rate limit between requests
-        if (i + 1 < (int)pairs.size()) {
-            sleep(1);
-        }
-    }
-
-    if (outRoutes.empty()) {
-        cout << "ApiRouteProvider: no routes were fetched successfully." << endl;
+    if (!buildRecordsFromSegments(segmentMeters, outRoutes)) {
         return false;
     }
 
-    cout << "ApiRouteProvider: built " << outRoutes.size()
-         << " RouteRecord(s) from OpenRouteService." << endl;
+    if (g_debugMode) {
+        cout << "ApiRouteProvider: built " << outRoutes.size()
+             << " segment(s) for the dynamic graph." << endl;
+        for (int i = 0; i < (int)outRoutes.size(); i++) {
+            cout << "  " << outRoutes[i].fromCity << " -> " << outRoutes[i].toCity
+                 << ": " << outRoutes[i].distanceKm << " km"
+                 << " [" << outRoutes[i].weather << "]" << endl;
+        }
+    }
+
     return true;
 }

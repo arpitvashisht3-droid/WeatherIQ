@@ -4,6 +4,8 @@
 
 using namespace std;
 
+extern bool g_debugMode;
+
 // Remove spaces at the start and end of a string
 static string trimText(string text) {
     int start = 0;
@@ -34,9 +36,9 @@ static string toLowerCopy(string text) {
 void Graph::addCity(string city) {
     if (adjList.find(city) == adjList.end()) {
         adjList[city] = vector<Road>();
-        cout << "Added city: " << city << endl;
+        if (g_debugMode) cout << "Added city: " << city << endl;
     } else {
-        cout << "City already exists: " << city << endl;
+        if (g_debugMode) cout << "City already exists: " << city << endl;
     }
 }
 
@@ -63,8 +65,10 @@ void Graph::addRoad(string city1, string city2, int distance, string weather) {
     roadToCity1.weather = weather;
     adjList[city2].push_back(roadToCity1);
 
-    cout << "Added road: " << city1 << " <-> " << city2
-         << " (" << distance << " km, " << weather << ")" << endl;
+    if (g_debugMode) {
+        cout << "Added road: " << city1 << " <-> " << city2
+             << " (" << distance << " km, " << weather << ")" << endl;
+    }
 }
 
 // Print every city and the roads connected to it

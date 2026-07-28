@@ -6,6 +6,8 @@
 
 using namespace std;
 
+extern bool g_debugMode;
+
 static string trimCityField(string text) {
     int start = 0;
     while (start < (int)text.size() && text[start] == ' ') {
@@ -44,7 +46,8 @@ bool CsvCityProvider::fetchCities(vector<CityRecord>& outCities) {
         return false;
     }
 
-    cout << "Fetching cities from " << sourceName() << "..." << endl;
+    if (g_debugMode)
+        cout << "Fetching cities from " << sourceName() << "..." << endl;
 
     string line;
     while (getline(input, line)) {
@@ -96,6 +99,7 @@ bool CsvCityProvider::fetchCities(vector<CityRecord>& outCities) {
     }
 
     input.close();
-    cout << "Fetched " << outCities.size() << " city coordinate(s) from CSV." << endl;
+    if (g_debugMode)
+        cout << "Fetched " << outCities.size() << " city coordinate(s) from CSV." << endl;
     return true;
 }

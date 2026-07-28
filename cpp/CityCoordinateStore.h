@@ -32,6 +32,9 @@ public:
     // Return coordinates for a stored city name; false if missing
     bool getCoordinates(std::string city, double& latitude, double& longitude) const;
 
+    // Add or update a city in the in-memory cache (e.g. after geocoding)
+    void putCity(std::string city, double latitude, double longitude);
+
     // Print loaded cities and coordinates
     void displayCities() const;
 

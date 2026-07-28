@@ -6,6 +6,8 @@
 
 using namespace std;
 
+extern bool g_debugMode;
+
 bool GraphBuilder::build(Graph& graph, RouteProvider& provider) {
     vector<RouteRecord> routes;
 
@@ -20,8 +22,10 @@ bool GraphBuilder::build(Graph& graph, RouteProvider& provider) {
         return false;
     }
 
-    cout << "GraphBuilder: building graph from " << provider.sourceName()
-         << " (" << routes.size() << " route(s))..." << endl;
+    if (g_debugMode) {
+        cout << "GraphBuilder: building graph from " << provider.sourceName()
+             << " (" << routes.size() << " route(s))..." << endl;
+    }
 
     for (int i = 0; i < (int)routes.size(); i++) {
         RouteRecord route = routes[i];
@@ -37,6 +41,6 @@ bool GraphBuilder::build(Graph& graph, RouteProvider& provider) {
         graph.addRoad(route.fromCity, route.toCity, route.distanceKm, route.weather);
     }
 
-    cout << "GraphBuilder: graph build complete." << endl;
+    if (g_debugMode) cout << "GraphBuilder: graph build complete." << endl;
     return true;
 }

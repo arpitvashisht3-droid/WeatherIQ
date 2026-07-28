@@ -51,6 +51,8 @@ def health() -> dict:
             os.getenv("OPENROUTESERVICE_API_KEY", "").strip()
             or os.getenv("ORS_API_KEY", "").strip()
         ),
+        "routing_mode": "dynamic_ors",
+        "geocoding": "ors_with_local_cache",
         "openweathermap_configured": weather_service.is_configured(),
     }
 
@@ -68,6 +70,6 @@ def create_route(body: RouteRequest) -> dict:
     except RoutePlannerError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    # Attach placeholder weather info (OpenWeatherMap later)
-    result["weather"] = weather_service.get_weather_for_route(result.get("route", []))
+    # Edge weather is already applied in C++ during dynamic graph build
+    result["weather"] = weather_service.get_weather_for_edges(result.get("edges", []))
     return result
