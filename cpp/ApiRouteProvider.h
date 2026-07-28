@@ -36,7 +36,8 @@ private:
 
     static std::string httpPostJson(const std::string& url,
                                     const std::string& jsonBody,
-                                    const std::string& apiKey);
+                                    const std::string& apiKey,
+                                    const std::string& acceptHeader = "application/json");
 
     // Parse ORS directions JSON into segment distances (meters)
     static bool parseSegmentDistances(const std::string& json,

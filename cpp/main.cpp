@@ -112,14 +112,30 @@ static void printUserFriendlyRoute(Graph& graph, const vector<string>& path) {
         }
     }
 
+    // Build the full path string for display
+    string fullPath = path[0];
+    for (int i = 1; i < (int)path.size(); i++) {
+        fullPath += " -> " + path[i];
+    }
+
     cout << "\n============================================" << endl;
     cout << "            Recommended Route" << endl;
     cout << "============================================" << endl;
-    cout << "\n  Route            : " << path.front() << " -> " << path.back() << endl;
-    cout << "  Distance         : " << totalDistance << " km" << endl;
-    cout << "  Expected Weather : " << worstWeather << endl;
-    cout << "  Travel Risk      : " << weatherRisk(worstWeather) << endl;
-    cout << "  Recommendation   : " << weatherAdvice(worstWeather) << endl;
+    cout << "\n  From              : " << path.front() << endl;
+    cout << "  To                : " << path.back() << endl;
+    if ((int)path.size() > 2) {
+        cout << "  Via               : ";
+        for (int i = 1; i < (int)path.size() - 1; i++) {
+            if (i > 1) cout << " -> ";
+            cout << path[i];
+        }
+        cout << endl;
+    }
+    cout << "  Full Path         : " << fullPath << endl;
+    cout << "  Distance          : " << totalDistance << " km" << endl;
+    cout << "  Expected Weather  : " << worstWeather << endl;
+    cout << "  Travel Risk       : " << weatherRisk(worstWeather) << endl;
+    cout << "  Recommendation    : " << weatherAdvice(worstWeather) << endl;
     cout << "\n  Why this route?  : This route is currently recommended" << endl;
     cout << "                     based on live weather conditions." << endl;
     cout << "\n============================================\n" << endl;
@@ -197,7 +213,7 @@ int main() {
 
     // ----- Build graph dynamically from ORS directions -----
     Graph weatherMap;
-    ApiRouteProvider routeProvider(Config::ORS_DIRECTIONS_URL);
+    ApiRouteProvider routeProvider(Config::ORS_DIRECTIONS_URL, &cityCoords);
     routeProvider.setQuery(
         startPlace.name,
         startPlace.latitude,

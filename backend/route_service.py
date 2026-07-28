@@ -125,6 +125,7 @@ class RouteService:
 
         # Patterns for the new user-friendly format
         route_friendly_re = re.compile(r"^\s*Route\s*:\s*(.+)\s*$")
+        full_path_friendly_re = re.compile(r"^\s*Full Path\s*:\s*(.+)\s*$")
         distance_friendly_re = re.compile(r"^\s*Distance\s*:\s*(\d+)\s*km\s*$")
         weather_friendly_re = re.compile(r"^\s*Expected Weather\s*:\s*(.+)\s*$")
         risk_friendly_re = re.compile(r"^\s*Travel Risk\s*:\s*(.+)\s*$")
@@ -149,6 +150,12 @@ class RouteService:
 
             # 1. New user-friendly format matching
             m = route_friendly_re.match(line)
+            if m:
+                route_taken = m.group(1).strip()
+                cities = [c.strip() for c in route_taken.split("->")]
+                continue
+
+            m = full_path_friendly_re.match(line)
             if m:
                 route_taken = m.group(1).strip()
                 cities = [c.strip() for c in route_taken.split("->")]
@@ -220,6 +227,10 @@ class RouteService:
                     start_coordinates = coords
                 else:
                     goal_coordinates = coords
+
+        if route_taken and cities:
+            source = cities[0]
+            destination = cities[-1]
 
         if not route_taken or not cities:
             if "No path found" in stdout or "No route to display" in stdout or "No route could be found" in stdout:

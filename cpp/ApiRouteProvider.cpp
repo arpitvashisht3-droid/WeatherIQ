@@ -82,7 +82,8 @@ int ApiRouteProvider::metersToKm(double meters) {
 
 string ApiRouteProvider::httpPostJson(const string& url,
                                       const string& jsonBody,
-                                      const string& apiKey) {
+                                      const string& apiKey,
+                                      const string& acceptHeader) {
     string bodyPath = "/tmp/weatheriq_ors_directions_body.json";
     ofstream bodyFile(bodyPath.c_str());
     if (!bodyFile.is_open()) {
@@ -96,7 +97,7 @@ string ApiRouteProvider::httpPostJson(const string& url,
         "curl -s -S --fail -X POST \"" + url + "\" "
         "-H \"Authorization: " + apiKey + "\" "
         "-H \"Content-Type: application/json; charset=utf-8\" "
-        "-H \"Accept: application/json\" "
+        "-H \"Accept: " + acceptHeader + "\" "
         "-d @\"" + bodyPath + "\" 2>/tmp/weatheriq_ors_directions_err.txt";
 
     FILE* pipe = popen(command.c_str(), "r");
@@ -246,16 +247,25 @@ bool ApiRouteProvider::parseGeoJsonCoordinates(const string& json, vector<pair<d
         if (c == '[') {
             depth++;
             if (depth == 2) {
-                size_t comma = json.find(',', i);
-                size_t close = json.find(']', i);
+                // We are at the opening '[' of a [lon, lat] coordinate pair.
+                // Find the comma and closing ']' strictly within this pair.
+                size_t pairStart = i;
+                size_t comma = json.find(',', pairStart + 1);
+                size_t close = json.find(']', pairStart + 1);
                 if (comma != string::npos && close != string::npos && comma < close) {
-                    string lonStr = json.substr(i + 1, comma - (i + 1));
+                    string lonStr = json.substr(pairStart + 1, comma - (pairStart + 1));
                     string latStr = json.substr(comma + 1, close - (comma + 1));
-                    char* endptr;
-                    double lon = strtod(lonStr.c_str(), &endptr);
-                    double lat = strtod(latStr.c_str(), &endptr);
-                    coordsOut.push_back({lat, lon});
-                    i = close;
+                    char* endptr1;
+                    char* endptr2;
+                    double lon = strtod(lonStr.c_str(), &endptr1);
+                    double lat = strtod(latStr.c_str(), &endptr2);
+                    if (endptr1 != lonStr.c_str() && endptr2 != latStr.c_str()) {
+                        coordsOut.push_back({lat, lon});
+                    }
+                    // Set i so that the loop's i++ lands on 'close' (the ']'),
+                    // which will be processed by the else-if branch below to
+                    // decrement depth back to 1.
+                    i = close - 1;
                 }
             }
         } else if (c == ']') {
@@ -297,7 +307,8 @@ bool ApiRouteProvider::fetchDirectionsJson(string& jsonOut) const {
         }
     }
 
-    jsonOut = httpPostJson(url, body.str(), apiKey);
+    string acceptHeader = enableWaypoints ? "application/geo+json" : "application/json";
+    jsonOut = httpPostJson(url, body.str(), apiKey, acceptHeader);
     return !jsonOut.empty();
 }
 
@@ -375,6 +386,11 @@ bool ApiRouteProvider::buildRecordsFromSegments(const vector<double>& segmentMet
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// Waypoint mode: parse GeoJSON geometry, sample intermediate coordinates,
+// resolve them to nearest cities, build named RouteRecords.
+// Falls back to legacy mode on any failure.
+// ---------------------------------------------------------------------------
 bool ApiRouteProvider::fetchRoutes(vector<RouteRecord>& outRoutes) {
     outRoutes.clear();
 
@@ -383,10 +399,18 @@ bool ApiRouteProvider::fetchRoutes(vector<RouteRecord>& outRoutes) {
         return false;
     }
 
+    // Determine if waypoints are active (env overrides compile-time default)
+    const char* envFlag = getenv("ENABLE_WAYPOINTS");
+    bool enableWaypoints = Config::ENABLE_WAYPOINTS;
+    if (envFlag != nullptr) {
+        enableWaypoints = (string(envFlag) == "1" || string(envFlag) == "true");
+    }
+
     if (g_debugMode) {
         cout << "ApiRouteProvider: fetching driving route "
-             << sourceName_ << " -> " << destName_ << " from OpenRouteService..."
-             << endl;
+             << sourceName_ << " -> " << destName_ << " from OpenRouteService"
+             << (enableWaypoints ? " [waypoint mode]" : " [legacy mode]")
+             << "..." << endl;
     }
 
     string json;
@@ -394,10 +418,180 @@ bool ApiRouteProvider::fetchRoutes(vector<RouteRecord>& outRoutes) {
         return false;
     }
 
+    // ===== WAYPOINT MODE =====
+    if (enableWaypoints && cityStore_ != nullptr) {
+        vector<pair<double, double>> geoCoords;
+        bool parsedGeo = parseGeoJsonCoordinates(json, geoCoords);
+
+        if (parsedGeo && geoCoords.size() >= 2) {
+            if (g_debugMode) {
+                cout << "ApiRouteProvider: GeoJSON has " << geoCoords.size()
+                     << " coordinate point(s). Sampling intermediate cities..." << endl;
+            }
+
+            // Compute cumulative arc lengths along the polyline (degrees-squared dist is fine
+            // for sampling; we convert to km at the end).
+            int N = (int)geoCoords.size();
+            vector<double> arcLen(N, 0.0); // cumulative length in degrees
+            for (int i = 1; i < N; i++) {
+                double dLat = geoCoords[i].first  - geoCoords[i-1].first;
+                double dLon = geoCoords[i].second - geoCoords[i-1].second;
+                arcLen[i] = arcLen[i-1] + sqrt(dLat*dLat + dLon*dLon);
+            }
+            double totalArc = arcLen[N-1];
+
+            // Choose how many intermediate waypoints to sample:
+            // ~1 per 150 km; minimum 1, maximum 8.
+            double totalKmEst = totalArc * 111.0;
+            int numIntermediate = (int)(totalKmEst / 150.0);
+            if (numIntermediate < 1)  numIntermediate = 1;
+            if (numIntermediate > 8)  numIntermediate = 8;
+
+            // Build city sequence: source, sampled intermediates, destination
+            vector<string>  cityNames;
+            vector<double>  cityLats;
+            vector<double>  cityLons;
+
+            cityNames.push_back(sourceName_);
+            cityLats.push_back(sourceLat_);
+            cityLons.push_back(sourceLon_);
+
+            // Keep track of used city names to avoid duplicates
+            vector<string> usedCities;
+            usedCities.push_back(sourceName_);
+            usedCities.push_back(destName_);
+
+            for (int s = 1; s <= numIntermediate; s++) {
+                // Target arc position: evenly spaced between source and dest
+                double targetArc = totalArc * ((double)s / (double)(numIntermediate + 1));
+
+                // Find the two polyline points that straddle targetArc
+                int lo = 0;
+                for (int k = 0; k < N - 1; k++) {
+                    if (arcLen[k] <= targetArc && arcLen[k+1] >= targetArc) {
+                        lo = k;
+                        break;
+                    }
+                }
+                // Interpolate between lo and lo+1
+                double segArc = arcLen[lo+1] - arcLen[lo];
+                double t = (segArc > 0.0) ? (targetArc - arcLen[lo]) / segArc : 0.0;
+                double sampLat = geoCoords[lo].first  + t * (geoCoords[lo+1].first  - geoCoords[lo].first);
+                double sampLon = geoCoords[lo].second + t * (geoCoords[lo+1].second - geoCoords[lo].second);
+
+                // Snap to nearest real city from the 6924-city dataset
+                double distKm = 0.0;
+                string nearestCity = cityStore_->findNearestCity(sampLat, sampLon, distKm, usedCities);
+
+                if (nearestCity.empty()) {
+                    if (g_debugMode) {
+                        cout << "  Waypoint " << s << ": no city found (skipping)." << endl;
+                    }
+                    continue;
+                }
+
+                // Retrieve actual stored coordinates for this city
+                double cityLat = sampLat, cityLon = sampLon;
+                cityStore_->getCoordinates(nearestCity, cityLat, cityLon);
+
+                if (g_debugMode) {
+                    cout << "  Waypoint " << s << ": " << nearestCity
+                         << " (" << cityLat << ", " << cityLon
+                         << ") dist from sample = " << (int)distKm << " km" << endl;
+                }
+
+                cityNames.push_back(nearestCity);
+                cityLats.push_back(cityLat);
+                cityLons.push_back(cityLon);
+                usedCities.push_back(nearestCity);
+            }
+
+            cityNames.push_back(destName_);
+            cityLats.push_back(destLat_);
+            cityLons.push_back(destLon_);
+
+            // Build RouteRecords between consecutive cities
+            int segCount = (int)cityNames.size() - 1;
+            if (g_debugMode) {
+                cout << "ApiRouteProvider: fetching live weather for "
+                     << segCount << " waypoint segment(s)..." << endl;
+            }
+
+            for (int i = 0; i < segCount; i++) {
+                double midLat = (cityLats[i] + cityLats[i+1]) / 2.0;
+                double midLon = (cityLons[i] + cityLons[i+1]) / 2.0;
+
+                string condition = Weather::fetchConditionAt(midLat, midLon);
+
+                // Haversine-approximated segment distance
+                double dLat = (cityLats[i+1] - cityLats[i]) * M_PI / 180.0;
+                double dLon = (cityLons[i+1] - cityLons[i]) * M_PI / 180.0;
+                double a = sin(dLat/2)*sin(dLat/2)
+                         + cos(cityLats[i]*M_PI/180.0) * cos(cityLats[i+1]*M_PI/180.0)
+                         * sin(dLon/2)*sin(dLon/2);
+                double c = 2.0 * atan2(sqrt(a), sqrt(1.0-a));
+                int distKm = (int)(6371.0 * c + 0.5);
+                if (distKm < 1) distKm = 1;
+
+                RouteRecord record;
+                record.fromCity   = cityNames[i];
+                record.toCity     = cityNames[i+1];
+                record.distanceKm = distKm;
+                record.weather    = condition;
+                outRoutes.push_back(record);
+            }
+
+            if (g_debugMode) {
+                cout << "ApiRouteProvider: built " << outRoutes.size()
+                     << " waypoint segment(s)." << endl;
+                for (int i = 0; i < (int)outRoutes.size(); i++) {
+                    cout << "  " << outRoutes[i].fromCity << " -> " << outRoutes[i].toCity
+                         << ": " << outRoutes[i].distanceKm << " km"
+                         << " [" << outRoutes[i].weather << "]" << endl;
+                }
+            }
+
+            return !outRoutes.empty();
+        }
+
+        // GeoJSON parse failed — fall through to legacy mode
+        if (g_debugMode) {
+            cout << "ApiRouteProvider: GeoJSON parse failed; falling back to legacy mode." << endl;
+        }
+    }
+
+    // ===== LEGACY MODE (also fallback from failed GeoJSON) =====
+    // If we were in waypoint mode, we fetched a GeoJSON response which the
+    // segment parser cannot parse. Re-fetch from the standard (non-/geojson) URL.
+    if (enableWaypoints) {
+        string apiKey = ApiRouteProvider::readApiKeyFromEnv();
+        ostringstream body;
+        body.setf(ios::fixed);
+        body.precision(6);
+        body << "{\"coordinates\":[[" << sourceLon_ << "," << sourceLat_ << "],["
+             << destLon_ << "," << destLat_ << "]]}";
+
+        string baseUrl = endpointUrl_;
+        // Strip /geojson if present
+        size_t pos = baseUrl.find("/geojson");
+        if (pos != string::npos) {
+            baseUrl = baseUrl.substr(0, pos);
+        }
+        if (!apiKey.empty()) {
+            json = httpPostJson(baseUrl, body.str(), apiKey);
+        }
+        if (json.empty()) {
+            cout << "ApiRouteProvider: legacy re-fetch also failed." << endl;
+            return false;
+        }
+    }
+
     vector<double> segmentMeters;
     if (!parseSegmentDistances(json, segmentMeters)) {
         cout << "ApiRouteProvider: could not parse segments from ORS response." << endl;
-        cout << "ApiRouteProvider: snippet: " << json.substr(0, 300) << endl;
+        if (g_debugMode) {
+            cout << "ApiRouteProvider: snippet: " << json.substr(0, 300) << endl;
+        }
         return false;
     }
 
@@ -407,7 +601,7 @@ bool ApiRouteProvider::fetchRoutes(vector<RouteRecord>& outRoutes) {
 
     if (g_debugMode) {
         cout << "ApiRouteProvider: built " << outRoutes.size()
-             << " segment(s) for the dynamic graph." << endl;
+             << " legacy segment(s) for the dynamic graph." << endl;
         for (int i = 0; i < (int)outRoutes.size(); i++) {
             cout << "  " << outRoutes[i].fromCity << " -> " << outRoutes[i].toCity
                  << ": " << outRoutes[i].distanceKm << " km"
