@@ -1,0 +1,5 @@
+.env
+.vite/
+weatheriq
+__pycache__/
+*.pyc

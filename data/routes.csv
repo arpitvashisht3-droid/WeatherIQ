@@ -1,0 +1,11 @@
+# Routes for WeatherIQ (placeholder until real API data is connected)
+# Format: city,destination,distance_km,weather
+# One row = one road between two cities. Distances are the existing demo values only.
+city,destination,distance_km,weather
+Delhi,Jaipur,280,Sunny
+Delhi,Ahmedabad,900,Hot
+Jaipur,Ahmedabad,650,Windy
+Ahmedabad,Mumbai,530,Rainy
+Mumbai,Pune,150,Cloudy
+Jaipur,Pune,900,Stormy
+Delhi,Mumbai,1400,Rainy
