@@ -38,7 +38,7 @@ bool GraphBuilder::build(Graph& graph, RouteProvider& provider) {
             graph.addCity(route.toCity);
         }
 
-        graph.addRoad(route.fromCity, route.toCity, route.distanceKm, route.weather);
+        graph.addRoad(route.fromCity, route.toCity, route.distanceKm, route.weather, route.temperatureC);
     }
 
     if (g_debugMode) cout << "GraphBuilder: graph build complete." << endl;

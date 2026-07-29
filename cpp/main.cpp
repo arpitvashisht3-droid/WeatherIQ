@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 #include <cstdlib>   // setenv
+#include <cmath>
+#include <limits>
 
 /*
  * loadDotEnv: reads KEY=VALUE pairs from a .env file and injects them into
@@ -47,6 +49,7 @@ static void loadDotEnv(const std::string& path) {
 
 #include "Graph.h"
 #include "AStar.h"
+#include "Weather.h"
 #include "ApiRouteProvider.h"
 #include "GraphBuilder.h"
 #include "CsvCityProvider.h"
@@ -96,6 +99,7 @@ static void printUserFriendlyRoute(Graph& graph, const vector<string>& path) {
     int totalDistance = 0;
     string worstWeather = "Sunny";
     int worstSeverity   = -1;
+    double worstTemp    = std::numeric_limits<double>::quiet_NaN();
 
     for (int i = 0; i < (int)path.size() - 1; i++) {
         vector<Road> roads = graph.getRoads(path[i]);
@@ -106,6 +110,7 @@ static void printUserFriendlyRoute(Graph& graph, const vector<string>& path) {
                 if (sev > worstSeverity) {
                     worstSeverity = sev;
                     worstWeather  = roads[j].weather;
+                    worstTemp     = roads[j].temperatureC;
                 }
                 break;
             }
@@ -134,10 +139,34 @@ static void printUserFriendlyRoute(Graph& graph, const vector<string>& path) {
     cout << "  Full Path         : " << fullPath << endl;
     cout << "  Distance          : " << totalDistance << " km" << endl;
     cout << "  Expected Weather  : " << worstWeather << endl;
+    if (!std::isnan(worstTemp)) {
+        cout << "  Temperature       : " << (int)round(worstTemp) << "°C" << endl;
+    }
     cout << "  Travel Risk       : " << weatherRisk(worstWeather) << endl;
     cout << "  Recommendation    : " << weatherAdvice(worstWeather) << endl;
     cout << "\n  Why this route?  : This route is currently recommended" << endl;
     cout << "                     based on live weather conditions." << endl;
+    cout << "Edges:" << endl;
+    for (int i = 0; i < (int)path.size() - 1; i++) {
+        string from = path[i];
+        string to = path[i + 1];
+        vector<Road> roads = graph.getRoads(from);
+        for (int j = 0; j < (int)roads.size(); j++) {
+            if (roads[j].destination == to) {
+                int penalty = Weather::getWeatherPenalty(roads[j].weather);
+                int edgeCost = roads[j].distance + penalty;
+                cout << "  " << from << " -> " << to
+                     << ": " << roads[j].distance << " km"
+                     << ", weather = " << Weather::describe(roads[j].weather)
+                     << " (penalty " << penalty << ")";
+                if (!std::isnan(roads[j].temperatureC)) {
+                    cout << ", temp = " << (int)round(roads[j].temperatureC) << " C";
+                }
+                cout << ", edge cost = " << edgeCost << endl;
+                break;
+            }
+        }
+    }
     cout << "\n============================================\n" << endl;
 }
 

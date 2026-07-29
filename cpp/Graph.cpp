@@ -42,8 +42,8 @@ void Graph::addCity(string city) {
     }
 }
 
-// Add a two-way road between city1 and city2 with distance and weather
-void Graph::addRoad(string city1, string city2, int distance, string weather) {
+// Add a two-way road between city1 and city2 with distance, weather and temperature
+void Graph::addRoad(string city1, string city2, int distance, string weather, double temperatureC) {
     if (adjList.find(city1) == adjList.end()) {
         cout << "Error: " << city1 << " is not in the graph. Add it first." << endl;
         return;
@@ -57,17 +57,19 @@ void Graph::addRoad(string city1, string city2, int distance, string weather) {
     roadToCity2.destination = city2;
     roadToCity2.distance = distance;
     roadToCity2.weather = weather;
+    roadToCity2.temperatureC = temperatureC;
     adjList[city1].push_back(roadToCity2);
 
     Road roadToCity1;
     roadToCity1.destination = city1;
     roadToCity1.distance = distance;
     roadToCity1.weather = weather;
+    roadToCity1.temperatureC = temperatureC;
     adjList[city2].push_back(roadToCity1);
 
     if (g_debugMode) {
         cout << "Added road: " << city1 << " <-> " << city2
-             << " (" << distance << " km, " << weather << ")" << endl;
+             << " (" << distance << " km, " << weather << ", temp = " << temperatureC << "C)" << endl;
     }
 }
 

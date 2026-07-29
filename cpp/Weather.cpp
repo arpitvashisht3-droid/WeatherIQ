@@ -194,12 +194,12 @@ bool Weather::isApiConfigured() {
     return !readOpenWeatherApiKey().empty();
 }
 
-string Weather::fetchConditionAt(double latitude, double longitude) {
+WeatherQueryResult Weather::fetchConditionAt(double latitude, double longitude) {
     string apiKey = readOpenWeatherApiKey();
     if (apiKey.empty()) {
         cout << "Weather: OPENWEATHERMAP_API_KEY not set; returning Unknown for edge."
              << endl;
-        return "Unknown";
+        return {"Unknown", 0.0};
     }
 
     ostringstream url;
@@ -215,7 +215,7 @@ string Weather::fetchConditionAt(double latitude, double longitude) {
     if (response.empty()) {
         cout << "Weather: API request failed at (" << latitude << ", " << longitude
              << "); returning Unknown." << endl;
-        return "Unknown";
+        return {"Unknown", 0.0};
     }
 
     // weather[0].main holds the broad condition (Rain, Clear, Clouds, ...)
@@ -241,7 +241,7 @@ string Weather::fetchConditionAt(double latitude, double longitude) {
     }
 
     if (owmMain.empty()) {
-        return "Unknown";
+        return {"Unknown", tempC};
     }
 
     string condition = mapOpenWeatherToCondition(owmMain, tempC, windSpeed);
@@ -249,5 +249,5 @@ string Weather::fetchConditionAt(double latitude, double longitude) {
         cout << "Weather: (" << latitude << ", " << longitude << ") OWM="
              << owmMain << " temp=" << tempC << "C -> " << condition << endl;
     }
-    return condition;
+    return {condition, tempC};
 }

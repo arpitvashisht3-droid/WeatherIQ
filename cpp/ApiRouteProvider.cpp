@@ -373,13 +373,14 @@ bool ApiRouteProvider::buildRecordsFromSegments(const vector<double>& segmentMet
         double midLat = (nodeLats[i] + nodeLats[i + 1]) / 2.0;
         double midLon = (nodeLons[i] + nodeLons[i + 1]) / 2.0;
 
-        string condition = Weather::fetchConditionAt(midLat, midLon);
+        WeatherQueryResult wq = Weather::fetchConditionAt(midLat, midLon);
 
         RouteRecord record;
         record.fromCity = nodes[i];
         record.toCity = nodes[i + 1];
         record.distanceKm = metersToKm(segmentMeters[i]);
-        record.weather = condition;
+        record.weather = wq.condition;
+        record.temperatureC = wq.temperatureC;
         outRoutes.push_back(record);
     }
 
@@ -521,7 +522,7 @@ bool ApiRouteProvider::fetchRoutes(vector<RouteRecord>& outRoutes) {
                 double midLat = (cityLats[i] + cityLats[i+1]) / 2.0;
                 double midLon = (cityLons[i] + cityLons[i+1]) / 2.0;
 
-                string condition = Weather::fetchConditionAt(midLat, midLon);
+                WeatherQueryResult wq = Weather::fetchConditionAt(midLat, midLon);
 
                 // Haversine-approximated segment distance
                 double dLat = (cityLats[i+1] - cityLats[i]) * M_PI / 180.0;
@@ -537,7 +538,8 @@ bool ApiRouteProvider::fetchRoutes(vector<RouteRecord>& outRoutes) {
                 record.fromCity   = cityNames[i];
                 record.toCity     = cityNames[i+1];
                 record.distanceKm = distKm;
-                record.weather    = condition;
+                record.weather    = wq.condition;
+                record.temperatureC = wq.temperatureC;
                 outRoutes.push_back(record);
             }
 

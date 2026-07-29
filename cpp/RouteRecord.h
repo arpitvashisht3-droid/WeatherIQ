@@ -3,6 +3,8 @@
 
 #include <string>
 
+#include <limits>
+
 /*
  * RouteRecord: one road between two cities, independent of how we fetched it.
  *
@@ -14,6 +16,7 @@ struct RouteRecord {
     std::string toCity;       // destination city
     int distanceKm;           // length in kilometers
     std::string weather;      // weather condition on this road
+    double temperatureC = std::numeric_limits<double>::quiet_NaN();
 };
 
 #endif
