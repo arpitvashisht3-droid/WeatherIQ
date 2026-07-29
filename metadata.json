@@ -1,0 +1,6 @@
+{
+  "name": "WeatherIQ",
+  "description": "Intelligent Weather Decision Support System with weather-aware route map, perfect window finder, smart alerts, and personalized activity insights.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
