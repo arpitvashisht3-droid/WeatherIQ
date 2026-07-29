@@ -112,12 +112,13 @@ class WeatherService:
         """Attach live weather metadata to parsed route edges (if coords available)."""
         results: list[dict[str, Any]] = []
         for edge in edges:
-            results.append(
-                {
-                    "from": edge.get("from"),
-                    "to": edge.get("to"),
-                    "condition": edge.get("weather"),
-                    "weather_penalty": edge.get("weather_penalty"),
-                }
-            )
+            metadata = {
+                "from": edge.get("from"),
+                "to": edge.get("to"),
+                "condition": edge.get("weather"),
+                "weather_penalty": edge.get("weather_penalty"),
+            }
+            if "temperature_c" in edge:
+                metadata["temperature_c"] = edge["temperature_c"]
+            results.append(metadata)
         return results

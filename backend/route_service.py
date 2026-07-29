@@ -120,6 +120,7 @@ class RouteService:
 
         # User-friendly fields (new format)
         expected_weather: str | None = None
+        temperature_c: int | None = None
         travel_risk: str | None = None
         recommendation: str | None = None
 
@@ -128,6 +129,7 @@ class RouteService:
         full_path_friendly_re = re.compile(r"^\s*Full Path\s*:\s*(.+)\s*$")
         distance_friendly_re = re.compile(r"^\s*Distance\s*:\s*(\d+)\s*km\s*$")
         weather_friendly_re = re.compile(r"^\s*Expected Weather\s*:\s*(.+)\s*$")
+        temp_friendly_re = re.compile(r"^\s*Temperature\s*:\s*([-0-9.]+)\s*(?:°C|C)?\s*$")
         risk_friendly_re = re.compile(r"^\s*Travel Risk\s*:\s*(.+)\s*$")
         rec_friendly_re = re.compile(r"^\s*Recommendation\s*:\s*(.+)\s*$")
 
@@ -136,6 +138,7 @@ class RouteService:
         edge_re = re.compile(
             r"^\s*(.+?)\s*->\s*(.+?):\s*(\d+)\s*km,\s*"
             r"weather\s*=\s*(.+?)\s*\(penalty\s*(\d+)\)"
+            r"(?:,\s*temp\s*=\s*([-0-9.]+)\s*(?:°C|C)?)?"
             r"(?:,\s*edge cost\s*=\s*(\d+))?\s*$"
         )
         distance_re = re.compile(r"^Distance travelled:\s*(\d+)\s*km")
@@ -171,6 +174,11 @@ class RouteService:
                 expected_weather = m.group(1).strip()
                 continue
 
+            m = temp_friendly_re.match(line)
+            if m:
+                temperature_c = int(round(float(m.group(1))))
+                continue
+
             m = risk_friendly_re.match(line)
             if m:
                 travel_risk = m.group(1).strip()
@@ -190,16 +198,17 @@ class RouteService:
 
             m = edge_re.match(line)
             if m:
-                edges.append(
-                    {
-                        "from": m.group(1).strip(),
-                        "to": m.group(2).strip(),
-                        "distance_km": int(m.group(3)),
-                        "weather": m.group(4).strip(),
-                        "weather_penalty": int(m.group(5)),
-                        "edge_cost": int(m.group(6)) if m.group(6) else None,
-                    }
-                )
+                edge_dict = {
+                    "from": m.group(1).strip(),
+                    "to": m.group(2).strip(),
+                    "distance_km": int(m.group(3)),
+                    "weather": m.group(4).strip(),
+                    "weather_penalty": int(m.group(5)),
+                    "edge_cost": int(m.group(7)) if m.group(7) else None,
+                }
+                if m.group(6) is not None:
+                    edge_dict["temperature_c"] = int(round(float(m.group(6))))
+                edges.append(edge_dict)
                 continue
 
             m = distance_re.match(line)
@@ -245,18 +254,19 @@ class RouteService:
         # reconstruct a single edge representation to support weather mapping cleanly.
         if not edges and cities and expected_weather:
             for i in range(len(cities) - 1):
-                edges.append(
-                    {
-                        "from": cities[i],
-                        "to": cities[i+1],
-                        "distance_km": distance_km if len(cities) == 2 else None,
-                        "weather": expected_weather,
-                        "weather_penalty": 0,
-                        "edge_cost": None,
-                    }
-                )
+                edge_dict = {
+                    "from": cities[i],
+                    "to": cities[i+1],
+                    "distance_km": distance_km if len(cities) == 2 else None,
+                    "weather": expected_weather,
+                    "weather_penalty": 0,
+                    "edge_cost": None,
+                }
+                if temperature_c is not None:
+                    edge_dict["temperature_c"] = temperature_c
+                edges.append(edge_dict)
 
-        return {
+        result_dict = {
             "source": source,
             "destination": destination,
             "route": cities,
@@ -272,3 +282,6 @@ class RouteService:
             "travel_risk": travel_risk,
             "recommendation": recommendation,
         }
+        if temperature_c is not None:
+            result_dict["temperature_c"] = temperature_c
+        return result_dict
