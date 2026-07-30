@@ -1,0 +1,180 @@
+{
+  "info": {
+    "name": "WeatherIQ — Smart Weather Alerts API",
+    "description": "Member 4 API collection for the Smart Weather Alerts module.\nEndpoints: GET /api/alerts, GET /api/alerts/:locationId, POST /api/alerts/generate, DELETE /api/alerts/:id\n\nExpected base URL: http://localhost:3000",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    }
+  ],
+  "item": [
+
+    {
+      "name": "1. Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/health", "host": ["{{baseUrl}}"], "path": ["api", "health"] }
+      },
+      "response": [
+        {
+          "name": "200 OK — server is running",
+          "status": "OK",
+          "code": 200,
+          "body": "{\n  \"success\": true,\n  \"message\": \"WeatherIQ Smart Alerts API is running.\",\n  \"timestamp\": \"2026-07-27T10:55:00.000Z\",\n  \"version\": \"1.0.0\"\n}"
+        }
+      ]
+    },
+
+    {
+      "name": "2. Generate Alerts from Cache",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": { "raw": "{{baseUrl}}/api/alerts/generate", "host": ["{{baseUrl}}"], "path": ["api", "alerts", "generate"] }
+      },
+      "response": [
+        {
+          "name": "201 Created — new alerts generated",
+          "status": "Created",
+          "code": 201,
+          "body": "{\n  \"success\": true,\n  \"message\": \"Alert generation complete. 5 alert(s) created, 0 skipped (duplicates).\",\n  \"data\": {\n    \"created\": 5,\n    \"skipped\": 0,\n    \"total\": 5,\n    \"alerts\": [11, 12, 13, 14, 15]\n  },\n  \"error\": null\n}"
+        },
+        {
+          "name": "200 OK — all skipped (duplicates already exist)",
+          "status": "OK",
+          "code": 200,
+          "body": "{\n  \"success\": true,\n  \"message\": \"Alert generation complete. No new alerts. 5 skipped (duplicates or no threshold breach).\",\n  \"data\": {\n    \"created\": 0,\n    \"skipped\": 5,\n    \"total\": 5,\n    \"alerts\": []\n  },\n  \"error\": null\n}"
+        },
+        {
+          "name": "500 Internal — DB connection failed",
+          "status": "Internal Server Error",
+          "code": 500,
+          "body": "{\n  \"success\": false,\n  \"message\": \"Server error during alert generation.\",\n  \"data\": null,\n  \"error\": \"ECONNREFUSED — Unable to connect to MySQL server.\"\n}"
+        }
+      ]
+    },
+
+    {
+      "name": "3. Get All Active Alerts (heap-sorted)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/alerts", "host": ["{{baseUrl}}"], "path": ["api", "alerts"] }
+      },
+      "response": [
+        {
+          "name": "200 OK — alerts sorted Critical → High → Medium → Low",
+          "status": "OK",
+          "code": 200,
+          "body": "{\n  \"success\": true,\n  \"message\": \"3 active alert(s) returned, sorted by priority (Min Heap).\",\n  \"count\": 3,\n  \"data\": [\n    {\n      \"alert_id\": 13,\n      \"location_id\": 5,\n      \"alert_type\": \"Thunderstorm\",\n      \"severity\": \"Critical\",\n      \"priority\": 1,\n      \"title\": \"Thunderstorm Alert — Kolkata\",\n      \"description\": \"Thunderstorm conditions detected (condition: \\\"Thunderstorms\\\"). Seek shelter immediately.\",\n      \"expires_at\": \"2026-07-28T10:55:00.000Z\",\n      \"is_active\": 1,\n      \"created_at\": \"2026-07-27T10:55:00.000Z\",\n      \"city\": \"Kolkata\",\n      \"state\": \"West Bengal\",\n      \"country\": \"India\"\n    },\n    {\n      \"alert_id\": 11,\n      \"location_id\": 1,\n      \"alert_type\": \"Air Pollution\",\n      \"severity\": \"High\",\n      \"priority\": 2,\n      \"title\": \"Air Pollution Alert — Delhi\",\n      \"description\": \"Air Quality Index has reached 168, exceeding the safe threshold of 150.\",\n      \"expires_at\": \"2026-07-28T10:55:00.000Z\",\n      \"is_active\": 1,\n      \"created_at\": \"2026-07-27T10:55:01.000Z\",\n      \"city\": \"Delhi\",\n      \"state\": \"Delhi\",\n      \"country\": \"India\"\n    },\n    {\n      \"alert_id\": 12,\n      \"location_id\": 2,\n      \"alert_type\": \"Heavy Rain\",\n      \"severity\": \"Medium\",\n      \"priority\": 3,\n      \"title\": \"Heavy Rain Alert — Mumbai\",\n      \"description\": \"Rain probability is 85%, exceeding the heavy rain threshold of 80%.\",\n      \"expires_at\": \"2026-07-28T10:55:00.000Z\",\n      \"is_active\": 1,\n      \"created_at\": \"2026-07-27T10:55:02.000Z\",\n      \"city\": \"Mumbai\",\n      \"state\": \"Maharashtra\",\n      \"country\": \"India\"\n    }\n  ],\n  \"error\": null\n}"
+        },
+        {
+          "name": "200 OK — no active alerts",
+          "status": "OK",
+          "code": 200,
+          "body": "{\n  \"success\": true,\n  \"message\": \"0 active alert(s) returned, sorted by priority (Min Heap).\",\n  \"count\": 0,\n  \"data\": [],\n  \"error\": null\n}"
+        }
+      ]
+    },
+
+    {
+      "name": "4. Get Alerts by Location — Delhi (ID: 1)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/alerts/1", "host": ["{{baseUrl}}"], "path": ["api", "alerts", "1"] }
+      },
+      "response": [
+        {
+          "name": "200 OK — alerts for Delhi, heap-sorted",
+          "status": "OK",
+          "code": 200,
+          "body": "{\n  \"success\": true,\n  \"message\": \"1 active alert(s) for Delhi, sorted by priority.\",\n  \"location\": {\n    \"location_id\": 1,\n    \"city\": \"Delhi\",\n    \"state\": \"Delhi\",\n    \"country\": \"India\"\n  },\n  \"count\": 1,\n  \"data\": [\n    {\n      \"alert_id\": 11,\n      \"location_id\": 1,\n      \"alert_type\": \"Air Pollution\",\n      \"severity\": \"High\",\n      \"priority\": 2,\n      \"title\": \"Air Pollution Alert — Delhi\",\n      \"description\": \"Air Quality Index is 168, exceeding the safe threshold of 150.\",\n      \"expires_at\": \"2026-07-28T10:55:00.000Z\",\n      \"is_active\": 1,\n      \"created_at\": \"2026-07-27T10:55:00.000Z\",\n      \"city\": \"Delhi\",\n      \"state\": \"Delhi\",\n      \"country\": \"India\"\n    }\n  ],\n  \"error\": null\n}"
+        },
+        {
+          "name": "404 Not Found — location does not exist",
+          "status": "Not Found",
+          "code": 404,
+          "body": "{\n  \"success\": false,\n  \"message\": \"Location with ID 999 not found.\",\n  \"data\": null,\n  \"error\": \"Location with ID 999 not found.\"\n}"
+        },
+        {
+          "name": "400 Bad Request — invalid locationId (non-numeric)",
+          "status": "Bad Request",
+          "code": 400,
+          "body": "{\n  \"success\": false,\n  \"message\": \"Invalid location ID. Must be a positive integer.\",\n  \"data\": null,\n  \"error\": \"Invalid location ID. Must be a positive integer.\"\n}"
+        }
+      ]
+    },
+
+    {
+      "name": "5. Get Alerts by Location — Non-existent (ID: 999)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/alerts/999", "host": ["{{baseUrl}}"], "path": ["api", "alerts", "999"] }
+      },
+      "response": [
+        {
+          "name": "404 Not Found",
+          "status": "Not Found",
+          "code": 404,
+          "body": "{\n  \"success\": false,\n  \"message\": \"Location with ID 999 not found.\",\n  \"data\": null,\n  \"error\": \"Location with ID 999 not found.\"\n}"
+        }
+      ]
+    },
+
+    {
+      "name": "6. Deactivate Alert (Soft Delete) — ID: 11",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/alerts/11", "host": ["{{baseUrl}}"], "path": ["api", "alerts", "11"] }
+      },
+      "response": [
+        {
+          "name": "200 OK — alert deactivated",
+          "status": "OK",
+          "code": 200,
+          "body": "{\n  \"success\": true,\n  \"message\": \"Alert 11 has been deactivated (soft delete — audit trail preserved).\",\n  \"data\": {\n    \"alertId\": 11,\n    \"deactivated\": true\n  },\n  \"error\": null\n}"
+        },
+        {
+          "name": "404 Not Found — alert ID does not exist",
+          "status": "Not Found",
+          "code": 404,
+          "body": "{\n  \"success\": false,\n  \"message\": \"Alert with ID 999 not found or already inactive.\",\n  \"data\": null,\n  \"error\": \"Alert with ID 999 not found or already inactive.\"\n}"
+        },
+        {
+          "name": "400 Bad Request — invalid alert ID",
+          "status": "Bad Request",
+          "code": 400,
+          "body": "{\n  \"success\": false,\n  \"message\": \"Invalid alert ID. Must be a positive integer.\",\n  \"data\": null,\n  \"error\": \"Invalid alert ID. Must be a positive integer.\"\n}"
+        }
+      ]
+    },
+
+    {
+      "name": "7. Verify Deactivated Alert No Longer Returned",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/alerts", "host": ["{{baseUrl}}"], "path": ["api", "alerts"] }
+      },
+      "response": [
+        {
+          "name": "200 OK — deactivated alert is absent",
+          "status": "OK",
+          "code": 200,
+          "body": "{\n  \"success\": true,\n  \"message\": \"2 active alert(s) returned, sorted by priority (Min Heap).\",\n  \"count\": 2,\n  \"data\": [\n    {\n      \"alert_id\": 13,\n      \"alert_type\": \"Thunderstorm\",\n      \"severity\": \"Critical\",\n      \"priority\": 1,\n      \"city\": \"Kolkata\"\n    },\n    {\n      \"alert_id\": 12,\n      \"alert_type\": \"Heavy Rain\",\n      \"severity\": \"Medium\",\n      \"priority\": 3,\n      \"city\": \"Mumbai\"\n    }\n  ],\n  \"error\": null\n}"
+        }
+      ]
+    }
+
+  ]
+}
