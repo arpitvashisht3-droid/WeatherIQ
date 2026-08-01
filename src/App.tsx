@@ -84,9 +84,7 @@ export default function App() {
 
             {/* RIGHT CARD: Weather-Aware Route Map */}
             <div className="lg:col-span-7">
-              <RouteMapCard
-                routes={activeWeather.routes}
-              />
+              <RouteMapCard />
             </div>
           </div>
 

@@ -13,6 +13,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from route_service import RoutePlannerError, RouteService
@@ -27,6 +28,14 @@ app = FastAPI(
     title="WeatherIQ API",
     description="Weather-aware route planning backed by the C++ A* engine.",
     version="0.1.0",
+)
+
+# Allow the Vite dev server (and any other origin) to call this API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 route_service = RouteService(project_root=PROJECT_ROOT)
