@@ -1,5 +1,12 @@
 .env
+.env.local
+
 .vite/
+
 weatheriq
+
 __pycache__/
 *.pyc
+
+node_modules/
+.venv/
